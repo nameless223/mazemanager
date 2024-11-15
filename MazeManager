@@ -1,0 +1,208 @@
+using UnityEngine;
+using System.Collections.Generic;
+
+public class MazeManager : MonoBehaviour
+{
+    public GameObject wallPrefab;
+    public GameObject floorPrefab;
+    public GameObject roofPrefab;
+    public GameObject outerWallPrefab;
+    public GameObject player;
+    public GameObject cornerObjectPrefab; 
+
+    public int mazeWidth = 10;
+    public int mazeHeight = 10;
+    public float cellSize = 4f;
+
+    private Cell[,] mazeGrid;
+    private bool isGeneratingMaze = false;
+    private bool isMazeGenerated = false;
+
+    private CharacterController playerController; // ref to player controller
+
+    private GameObject[] cornerObjects = new GameObject[4]; // corner obj array
+
+    private class Cell
+    {
+        public bool visited = false;
+        public GameObject northWall, southWall, eastWall, westWall;
+    }
+
+    private void Start()
+    {
+        //get controller
+        playerController = player.GetComponent<CharacterController>();
+
+        
+        GenerateMaze();
+    }
+
+    public void GenerateMaze()
+    {
+        if (isGeneratingMaze || isMazeGenerated) return;
+
+        isGeneratingMaze = true;
+
+        InitializeMazeGrid();
+        CarveMazePaths(1, 1);
+
+        CreateFloorsAndRoofs();
+        CreateOuterWalls();
+        CreateCornerObjects(); //create corner obj
+
+        isMazeGenerated = true;
+        isGeneratingMaze = false;
+    }
+
+    private void InitializeMazeGrid()
+    {
+        mazeGrid = new Cell[mazeWidth, mazeHeight];
+
+        for (int x = 0; x < mazeWidth; x++)
+        {
+            for (int y = 0; y < mazeHeight; y++)
+            {
+                mazeGrid[x, y] = new Cell();
+                Vector3 cellPosition = new Vector3(x * cellSize, 0, y * cellSize);
+
+                if (x > 0 && x < mazeWidth - 1 && y > 0 && y < mazeHeight - 1)
+                {
+                    mazeGrid[x, y].northWall = Instantiate(wallPrefab, cellPosition + Vector3.forward * (cellSize / 2), Quaternion.identity);
+                    mazeGrid[x, y].southWall = Instantiate(wallPrefab, cellPosition + Vector3.back * (cellSize / 2), Quaternion.identity);
+                    mazeGrid[x, y].eastWall = Instantiate(wallPrefab, cellPosition + Vector3.right * (cellSize / 2), Quaternion.Euler(0, 90, 0));
+                    mazeGrid[x, y].westWall = Instantiate(wallPrefab, cellPosition + Vector3.left * (cellSize / 2), Quaternion.Euler(0, 90, 0));
+                }
+            }
+        }
+    }
+
+    private void CreateFloorsAndRoofs()
+    {
+        for (int x = 0; x < mazeWidth; x++)
+        {
+            for (int y = 0; y < mazeHeight; y++)
+            {
+                Vector3 cellPosition = new Vector3(x * cellSize, 0, y * cellSize);
+                Instantiate(floorPrefab, cellPosition - new Vector3(0, cellSize / 2f, 0), Quaternion.identity);
+                GameObject roof = Instantiate(roofPrefab, cellPosition + Vector3.up * cellSize, Quaternion.identity);
+                roof.transform.position -= new Vector3(0, 0.5f, 0);
+                roof.transform.rotation = Quaternion.Euler(0, 0, 180);
+            }
+        }
+    }
+
+    private void CreateOuterWalls()
+    {
+        float offset = cellSize * 0.7f;
+
+        for (int x = 0; x < mazeWidth; x++)
+        {
+            Vector3 topPosition = new Vector3(x * cellSize, 0, mazeHeight * cellSize) - new Vector3(0, 0, offset);
+            Vector3 bottomPosition = new Vector3(x * cellSize, 0, -cellSize) + new Vector3(0, 0, offset);
+
+            Instantiate(outerWallPrefab, topPosition + Vector3.forward * (cellSize / 4), Quaternion.identity).transform.rotation = Quaternion.Euler(0, 90, 0);
+            Instantiate(outerWallPrefab, bottomPosition + Vector3.back * (cellSize / 4), Quaternion.identity).transform.rotation = Quaternion.Euler(0, 90, 0);
+        }
+
+        for (int y = 0; y < mazeHeight; y++)
+        {
+            Vector3 leftPosition = new Vector3(-cellSize, 0, y * cellSize) + new Vector3(offset, 0, 0);
+            Vector3 rightPosition = new Vector3(mazeWidth * cellSize, 0, y * cellSize) - new Vector3(offset, 0, 0);
+
+            Instantiate(outerWallPrefab, leftPosition + Vector3.left * (cellSize / 4), Quaternion.identity);
+            Instantiate(outerWallPrefab, rightPosition + Vector3.right * (cellSize / 4), Quaternion.identity).transform.rotation = Quaternion.Euler(0, 180, 0);
+        }
+    }
+
+    private void CarveMazePaths(int x, int y)
+    {
+        mazeGrid[x, y].visited = true;
+
+        List<Vector2Int> directions = new List<Vector2Int> { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
+        Shuffle(directions);
+
+        foreach (Vector2Int direction in directions)
+        {
+            int nx = (x + direction.x + mazeWidth) % mazeWidth;
+            int ny = (y + direction.y + mazeHeight) % mazeHeight;
+
+            if (!mazeGrid[nx, ny].visited)
+            {
+                if (direction == Vector2Int.up)
+                {
+                    Destroy(mazeGrid[x, y].northWall);
+                    Destroy(mazeGrid[nx, ny].southWall);
+                }
+                else if (direction == Vector2Int.down)
+                {
+                    Destroy(mazeGrid[x, y].southWall);
+                    Destroy(mazeGrid[nx, ny].northWall);
+                }
+                else if (direction == Vector2Int.left)
+                {
+                    Destroy(mazeGrid[x, y].westWall);
+                    Destroy(mazeGrid[nx, ny].eastWall);
+                }
+                else if (direction == Vector2Int.right)
+                {
+                    Destroy(mazeGrid[x, y].eastWall);
+                    Destroy(mazeGrid[nx, ny].westWall);
+                }
+
+                CarveMazePaths(nx, ny);
+            }
+        }
+    }
+
+    private void Shuffle(List<Vector2Int> list)
+    {
+        for (int i = 0; i < list.Count; i++)
+        {
+            Vector2Int temp = list[i];
+            int randomIndex = Random.Range(i, list.Count);
+            list[i] = list[randomIndex];
+            list[randomIndex] = temp;
+        }
+    }
+
+    private void CreateCornerObjects()
+    {
+        //corner pos def
+        Vector3[] cornerPositions = new Vector3[4]
+        {
+            new Vector3(0, 0, 0),  
+            new Vector3(mazeWidth * cellSize, 0, 0),  
+            new Vector3(0, 0, mazeHeight * cellSize),  
+            new Vector3(mazeWidth * cellSize, 0, mazeHeight * cellSize)  
+        };
+
+        //instancing 
+        for (int i = 0; i < cornerPositions.Length; i++)
+        {
+            cornerObjects[i] = Instantiate(cornerObjectPrefab, cornerPositions[i], Quaternion.identity);
+            cornerObjects[i].name = "CornerObject_" + i;  
+        }
+    }
+
+    public void OnInteractWithTV()
+    {
+        if (isMazeGenerated)
+        {
+            //randomly tp player to corner point
+            int randomIndex = Random.Range(0, cornerObjects.Length);
+            Vector3 teleportPosition = cornerObjects[randomIndex].transform.position;
+
+            
+            Debug.Log($"Teleporting player to: {teleportPosition}");
+
+            if (teleportPosition != Vector3.zero)
+            {
+                
+                playerController.enabled = false;  
+                player.transform.position = teleportPosition;
+                playerController.enabled = true;   
+            }
+        }
+       
+    }
+}
